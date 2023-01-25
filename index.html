@@ -23,6 +23,17 @@
         padding-right: 10px;
       }
     </style>
+    <style>
+      .user-mermaid {
+        width: 70px;
+        min-height: 50px;
+        background-image: url("./img/dog.jpg");
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: top right;
+        display: inline-block;
+      }
+    </style>
   </head>
   <body>
     <div class="reveal">
@@ -32,27 +43,331 @@
         </section>
 
         <section>
-          <h2>Premabule en anglais?</h2>
+          <h2>Disclaimer</h2>
 
           <ul>
-            <li>I'm no specialist, it's only what I discovered</li>
-            <li>I won't go in deep details</li>
+            <li>I'm no specialist, it's only what I understand</li>
+            <li class="fragment">I won't go in deep details</li>
           </ul>
-
         </section>
 
-
-
-        <!--
         <section>
-          Should we introduce that in the CI ? maybe with a threshold ? ```
-          #!/bin/sh OUTPUT=`yarn --silent ts-prune | wc -l`;
-          MAX_DEAD_CODE_LINES="20"; echo "$OUTPUT lines remaining, maximum set
-          to $MAX_DEAD_CODE_LINES" if [ "$OUTPUT" -gt "$MAX_DEAD_CODE_LINES" ];
-          then echo "Error, you added dead code, please remove some." exit 1 fi
-          ```
+          <h2>Everything starts with a user...</h2>
+          <div class="fragment">
+            <p>...wanting to go somewhere</p>
+            <img
+              style="width: 400px; border: 1px solid #444"
+              src="./img/dog.jpg"
+              alt="a dog"
+            />
+          </div>
         </section>
-        -->
+
+        <section>
+          <h2>
+            That user decides to look for bus information in a country on google
+          </h2>
+          <div class="fragment">
+            <p>
+              And click on the link<br />
+              <a href="https://www.busbud.com/en/country/za"
+                >https://www.busbud.com/en/country/za</a
+              >
+            </p>
+            <img
+              style="width: 400px; border: 1px solid #444"
+              src="img/dog-computer.jpg"
+              alt="a dog typing on a computer"
+            />
+          </div>
+        </section>
+
+        <section>
+          <pre class="mermaid">
+sequenceDiagram
+    User ->> Route53:  What is the IP of www.busbud.com ?
+</pre
+          >
+        </section>
+
+        <section>
+          <h2>DNS Resolution</h2>
+          <ul>
+            <li>Domain Name Server</li>
+            <li>Fully Qualified Domain Name -> IP</li>
+            <li class="fragment">
+              eg. <code>www.budbud.com</code> -> <code>151.101.138.133</code>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Records</h2>
+
+          <pre><code data-trim class="bash">
+             dig www.busbud.com
+          </code></pre>
+          <pre><code data-trim class="bash">
+;; ANSWER SECTION:
+www.busbud.com.         73	IN	CNAME	d.sni.global.fastly.net.
+d.sni.global.fastly.net. 7	IN	A	151.101.138.133
+          </code></pre>
+          <p class="fragment"><span>CNAME</span>, <span>A?</span></p>
+
+          <p class="fragment">
+            <a
+              target="_blank"
+              href="https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/ZD0RS70HJBNYI"
+              >https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/ZD0RS70HJBNYI</a
+            >
+          </p>
+        </section>
+
+        <section>
+          <h2>CDN</h2>
+          <p>Fastly edge feature works with DNS</p>
+          <pre><code>nslookup j.sni.global.fastly.net</code></pre>
+          <pre class="fragment"><code data-trim>
+# In Canada
+Server:		24.201.245.77
+Address:	24.201.245.77#53
+
+Non-authoritative answer:
+Name:	j.sni.global.fastly.net
+Address: 151.101.138.132</code></pre>
+          <pre class="fragment"><code data-trim>
+# In Spain
+Server:		212.166.132.104
+Address:	212.166.132.104#53
+
+Non-authoritative answer:
+Name:	j.sni.global.fastly.net
+Address: 151.101.134.132</code></pre>
+        </section>
+
+        <section>
+          <pre class="mermaid">
+sequenceDiagram
+    User->>Route53 : What is the IP of www.busbud.com ?
+    Route53-->>User: 151.101.138.133, a Fastly PoP
+    User->>Fastly PoP: https://151.101.138.133/en/country/za
+        </pre
+          >
+        </section>
+
+        <section>
+          <h2>Fastly, and then?</h2>
+          <pre><code data-trim>
+  declare local var.backend_region STRING;
+  set var.backend_region = if(req.http.x-busbud-backend, req.http.x-busbud-backend, client.geo.continent_code);
+  set var.backend_region = table.lookup(continent_datacenter_lookup, var.backend_region, "NA");
+  #...
+  if ( # ...
+    req.url ~ "/country/"
+    #...
+  ) {
+    if (var.backend_region == "EU") {
+      set req.backend = dir_pubweb_landing_pages_eu;
+    } else {
+      set req.backend = dir_pubweb_landing_pages_us;
+    }
+  }
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Fastly backend</h2>
+          <pre><code data-trim>
+backend F_pubweb_landing_pages_eu {
+  .connect_timeout = 5s;
+  .dynamic = true;
+  .port = "443";
+  .host = "pubweb-landing-pages-production-eu.busbud-int.com";
+  .host_header = "pubweb-landing-pages-production-eu.busbud-int.com";
+  .always_use_host_header = true;
+  .first_byte_timeout = 29s;
+  .max_connections = 200;
+  .between_bytes_timeout = 10s;
+  .share_key = "4cKrVLiF9AiUt2BIAuNOqv";
+  .ssl = true;
+  .ssl_sni_hostname = "pubweb-landing-pages-production-eu.busbud-int.com";
+  # ...
+}
+
+          </code></pre>
+        </section>
+
+        <section>
+          <h2>Fastly</h2>
+          <ul>
+            <li>
+              <a href="github.com/busbud/fastly-vcl" target="_blank"
+                >github.com/busbud/fastly-vcl</a
+              >
+            </li>
+            <li>
+              <a
+                target="_blank"
+                href="https://manage.fastly.com/configure/services/4cKrVLiF9AiUt2BIAuNOqv"
+                >https://manage.fastly.com/configure/services/4cKrVLiF9AiUt2BIAuNOqv</a
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <pre class="mermaid">
+sequenceDiagram
+    User->>Route53 : IP of www.busbud.com?
+    Route53-->>User: 151.101.138.133, a Fastly PoP
+    User->>Fastly PoP: https://151.101.138.133/en/country/za
+    Fastly PoP->>Route53: IP of pubweb-landing-pages-production-eu.busbud-int.com?
+</pre
+          >
+        </section>
+
+        <section>
+          <h2>DNS lookup, again</h2>
+          <pre><code data-trim class="bash">dig pubweb-landing-pages-production-eu.busbud-int.com</code></pre>
+          <pre class="fragment"><code data-trim class="bash">;; ANSWER SECTION:
+pubweb-landing-pages-production-eu.busbud-int.com. 300 IN A 34.107.146.64</code></pre>
+          <pre
+            class="fragment"
+          ><code data-trim class="bash">whois 34.107.146.64</code></pre>
+          <pre class="fragment"><code data-trim class="bash">
+            # ...
+            OrgName:        Google LLC
+            # ...
+          </code></pre>
+        </section>
+
+        <section>
+          <pre class="mermaid">
+sequenceDiagram
+    User->>Route53 : IP of www.busbud.com?
+    Route53-->>User: 151.101.138.133, a Fastly PoP
+    User->>Fastly PoP: https://www.busbud.com/en/country/za
+    Fastly PoP->>Route53: IP of pubweb-landing-pages-production-eu.busbud-int.com?
+    Route53-->>Fastly PoP: 34.107.146.64, a GCP LB
+    Fastly PoP->> GCP LB:  https://34.107.146.64/en/country/za
+</pre
+          >
+        </section>
+
+        <section>
+          <h2>GCP Load Balancers</h2>
+
+          <p>Network Endpoint Group aka. NEG</p>
+        </section>
+
+        <section>
+          <h2>GCP Load Balancers</h2>
+          <a
+            href="https://console.cloud.google.com/net-services/loadbalancing/list/loadBalancers?referrer=search&project=busbud-integrations"
+            target="_blank"
+            >https://console.cloud.google.com/net-services/loadbalancing/list/loadBalancers?referrer=search&project=busbud-integrations</a
+          >
+        </section>
+
+        <section>
+          <h2>K8S services</h2>
+          <ul>
+            <li class="fragment">A set of pods with an IP</li>
+            <li class="fragment">Expose an application through an IP</li>
+            <li class="fragment">Is very bad at load balancing</li>
+            <li class="fragment">
+              you need the
+              <a
+                target="_blank"
+                href="https://github.com/busbud/terraform-modules/blob/master/v2/components/kube-deployment/main.tf#L525"
+                >`ingress:true`</a
+              >
+              here to add the pods to the NEG
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>K8S pods</h2>
+          <ul>
+            <li class="fragment">Basic unit of k8s application</li>
+            <li class="fragment">has an IP</li>
+            <li class="fragment">
+              Can be composed of one or multiple containers
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Sidecars</h2>
+          <fieldset
+            style="
+              width: 800px;
+              height: 200px;
+              background-color: #eeb;
+              border: 1px solid #333;
+              display: flex;
+              padding: 10px;
+            "
+          >
+            <legend>Pod</legend>
+            <fieldset
+              style="
+                border: 1px solid #333;
+                width: 150px;
+                margin: 5px;
+                background-color: #bee;
+              "
+            >
+              Nginx
+            </fieldset>
+            <fieldset
+              style="
+                border: 1px solid #333;
+                flex-grow: 1;
+                margin: 5px;
+                background-color: #ebe;
+              "
+            >
+              Pubweb
+            </fieldset>
+          </fieldset>
+
+          <ul>
+            <li class="fragment">
+              Small container near the main container in a pod
+            </li>
+            <li class="fragment">
+              Nginx
+              <a
+                href="https://github.com/busbud/public-website/blob/master/infrastructure/sidecar/default.conf.template"
+                >does the gzipping</a
+              >
+            </li>
+            <li class="fragment">Share their localhost</li>
+          </ul>
+        </section>
+
+        <section>
+          <pre class="mermaid">
+sequenceDiagram
+    User->>Route53 : IP of www.busbud.com?
+    Route53-->>User: 151.101.138.133, a Fastly PoP
+    User->>Fastly PoP: https://151.101.138.133/en/country/za
+    Fastly PoP->>Route53: IP of pubweb-landing-pages-production-eu.busbud-int.com?
+    Route53-->>Fastly PoP: 34.107.146.64, a GCP LB
+    Fastly PoP->> GCP LB:  https://34.107.146.64/en/country/za
+    GCP LB ->> Sidecar Nginx: http://10.32.70.243:80/en/country/za
+    Sidecar Nginx ->> Pubweb: http://localhost:5000/en/country/za
+    Pubweb -->> Sidecar Nginx: HTML
+    Sidecar Nginx -->> GCP LB: gzipped HTML
+    GCP LB -->> Fastly PoP: encrypted gzipped HTML
+    Fastly PoP -->> User: encrypted gzipped HTML
+
+
+</pre
+          >
+        </section>
 
         <section>
           <h2>Questions?</h2>
@@ -64,6 +379,7 @@
     <script src="plugin/notes/notes.js"></script>
     <script src="plugin/markdown/markdown.js"></script>
     <script src="plugin/highlight/highlight.js"></script>
+
     <script>
       // More info about initialization & config:
       // - https://revealjs.com/initialization/
@@ -74,6 +390,33 @@
         // Learn about plugins: https://revealjs.com/plugins/
         plugins: [RevealMarkdown, RevealHighlight, RevealNotes],
       });
+    </script>
+
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@9/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
+
+      const handleMermaid = (event) => {
+        [...event.currentSlide?.querySelectorAll(".graph")].forEach((node) =>
+          node.remove()
+        );
+
+        const mermaids = event.currentSlide?.querySelectorAll(".mermaid");
+
+        [...mermaids].forEach((m) => {
+          const graphDefinition = m.innerText;
+
+          mermaid.mermaidAPI.render("graphDiv", graphDefinition, (svg) => {
+            m.style.display = "none";
+            const span = document.createElement("span");
+            span.classList.add("graph");
+            span.innerHTML = svg;
+            m.insertAdjacentHTML("afterend", span.outerHTML);
+          });
+        });
+      };
+      Reveal.on("ready", handleMermaid);
+      Reveal.on("slidechanged", handleMermaid);
     </script>
   </body>
 </html>
